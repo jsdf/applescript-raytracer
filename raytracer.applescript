@@ -5,38 +5,38 @@ on makeColor(r, g, b)
 end
 
 on printRGB(r, g, b)
-	set colr to (round (255.999 * r) rounding down)
-	set colg to (round (255.999 * g) rounding down)
-	set colb to (round (255.999 * b) rounding down)
+	set colr to (round (256 * r) rounding down)
+	set colg to (round (256 * g) rounding down)
+	set colb to (round (256 * b) rounding down)
 	log ("" & colr & " " & colg & " " & colb & "\n")
 end
 
 on printColor(color)
-	set colr to (round (255.999 * (red in color)) rounding down)
-	set colg to (round (255.999 * (green in color)) rounding down)
-	set colb to (round (255.999 * (blue in color)) rounding down)
+	set colr to (round (256 * (red in color)) rounding down)
+	set colg to (round (256 * (green in color)) rounding down)
+	set colb to (round (256 * (blue in color)) rounding down)
 	log ("" & colr & " " & colg & " " & colb & "\n")
 end
 
 on writeColor(outfile, color)
-	set colr to (round (255.999 * (red in color)) rounding down)
-	set colg to (round (255.999 * (green in color)) rounding down)
-	set colb to (round (255.999 * (blue in color)) rounding down)
+	set colr to (round (256 * (red in color)) rounding down)
+	set colg to (round (256 * (green in color)) rounding down)
+	set colb to (round (256 * (blue in color)) rounding down)
 	write ("" & colr & " " & colg & " " & colb & "\n") to outfile
 end
 on writeColorInl(outfile, color)
 	-- slower than writeColor
-	write (round (255.999 * (red in color)) rounding down) to outfile
+	write (round (256 * (red in color)) rounding down) to outfile
 	write " " to outfile
-	write (round (255.999 * (green in color)) rounding down) to outfile
+	write (round (256 * (green in color)) rounding down) to outfile
 	write " " to outfile
-	write (round (255.999 * (blue in color)) rounding down) to outfile
+	write (round (256 * (blue in color)) rounding down) to outfile
 	write "\n" to outfile
 end
 on writeRGB(outfile, r,g,b)
-	set colr to (round (255.999 * (r)) rounding down)
-	set colg to (round (255.999 * (g)) rounding down)
-	set colb to (round (255.999 * (b)) rounding down)
+	set colr to (round (256 * (r)) rounding down)
+	set colg to (round (256 * (g)) rounding down)
+	set colb to (round (256 * (b)) rounding down)
 	write ("" & colr & " " & colg & " " & colb & "\n") to outfile
 end
 
@@ -104,6 +104,13 @@ on v3add(self, other)
 		y: y of self + y of other, ¬
 		z: z of self + z of other ¬
 	}
+end
+
+on v3addMut(self, other) 
+	set x of self to x of self + x of other
+	set y of self to y of self + y of other
+	set z of self to z of self + z of other
+	self
 end
 
 on v3addScalar(self, scalar) 
@@ -178,14 +185,23 @@ on v3clone(other)
 	v3(x of other, y of other, z of other)
 end
 
+on v3isEmpty(self)
+	x of self = 0 and y of self = 0 and z of self = 0
+end
+
+on v3print(self)
+	log ("" & x in self & " " & y in self & " " & z in self)
+end
+
 on v3copyFrom(self, other)
 	set x of self to x of other
 	set y of self to y of other
 	set z of self to z of other
 end
 
-on v3randomInRange(min,max)
-	return v3(random number from min to max, random number from min to max, random number from min to max)
+on v3randomInRange(min, max)
+	set rng to max - min
+	return v3(random number * rng + min, random number * rng + min, random number * rng + min)
 end
 
 on randomInUnitSphere()
@@ -195,6 +211,25 @@ on randomInUnitSphere()
 			return p
 		end
 	end
+end
+
+on randomInHemisphere(normal)
+	set inUnitSphere to randomInUnitSphere()
+	if (v3dot(inUnitSphere, normal) > 0.0) -- In the same hemisphere as the normal
+		return inUnitSphere
+	else
+		return v3mulScalar(inUnitSphere, -1.0)
+	end
+end
+
+on clamp(x, min, max)
+	if (x < min)
+		return min
+	end
+	if (x > max)
+		return max
+	end
+	return x
 end
 
 on makeRay(origin, direction)
@@ -207,6 +242,14 @@ end
 
 on v3ToColor(v)
 	makeColor(x of v, y of v, z of v)
+end
+
+on correctColor(c)
+	-- sqrt for gamma correction
+  set red of c to clamp(sqrt(red of c), 0.0, 0.999)
+  set green of c to clamp(sqrt(green of c), 0.0, 0.999)
+  set blue of c to clamp(sqrt(blue of c), 0.0, 0.999)
+  c
 end
 
 on makeHitRecord()
@@ -311,24 +354,74 @@ on newHittableList(_objects)
 	return hittableList
 end
 
-on rayColor(r, world)
+on newCamera(aspectRatio)
+	set _viewportHeight to 2.0
+	set _viewportWidth to aspectRatio * _viewportHeight
+	set _focalLength to 1.0
+ 
+	set _origin to v3(0, 0, 0)
+	set _horizontal to v3(_viewportWidth, 0, 0)
+	set _vertical to v3(0, _viewportHeight, 0)
+ 
+	-- lowerLeftCorner = origin - horizontal/2 - vertical/2 - v3(0, 0, focalLength)
+	set _lowerLeftCorner to ¬
+		v3sub( ¬
+			v3sub( ¬
+				v3sub(_origin, v3divScalar(_horizontal, 2)), ¬
+				v3divScalar(_vertical, 2) ¬
+			), ¬
+			v3(0, 0, _focalLength) ¬
+		)
+	script camera
+
+		property viewportHeight : _viewportHeight
+		property viewportWidth : _viewportWidth
+		property focalLength : _focalLength
+
+		property origin : _origin
+		property horizontal : _horizontal
+		property vertical : _vertical
+
+		-- lowerLeftCorner = origin - horizontal/2 - vertical/2 - v3(0, 0, focalLength)
+		property lowerLeftCorner:  _lowerLeftCorner
+
+		on getRay(u, v)
+			makeRay(my origin, v3sub(v3add(v3add(my lowerLeftCorner, v3mulScalar(my horizontal, u)), v3mulScalar(my vertical, v)), my origin))
+		end
+	end
+end
+
+on rayColor(r, world, depth)
 	set rec to makeHitRecord()
 	set nearInfinity to 2.0e20
-	set didHit to world's hit(r, 0, nearInfinity, rec)
-	if didHit
-    -- point3 target = rec.p + rec.normal + random_in_unit_sphere();
+	set nearZero to 0.001
 
-		return v3ToColor(v3mulScalar(v3add(normal of rec, v3(1,1,1)), 0.5))
+	-- If we've exceeded the ray bounce limit, no more light is gathered.
+	if depth <= 0
+		return v3origin()
+	end
+
+	set didHit to world's hit(r, nearZero, nearInfinity, rec)
+	if didHit
+		set rand to randomInHemisphere(normal of rec)
+		set target to v3add(p of rec, rand)
+		set dir to v3sub(target, p of rec)
+
+		-- bounce light
+		-- 0.5 * ray_color(ray(rec.p, target - rec.p), world, depth-1)
+		return v3mulScalar(rayColor(makeRay(p of rec, dir), world, depth-1), 0.5)
+
+		-- color based on normal
+		-- return v3mulScalar(v3add(normal of rec, v3(1,1,1)), 0.5)
 	end
 
 	set t to 0.5*(y of v3unit(direction of r) + 1.0)
-	return v3ToColor(v3add(v3mulScalar(v3(1.0, 1.0, 1.0),(1.0-t)), v3mulScalar(v3(0.5, 0.7, 1.0),t)))
+	return v3add(v3mulScalar(v3(1.0, 1.0, 1.0),(1.0-t)), v3mulScalar(v3(0.5, 0.7, 1.0),t))
 end
 
-on writeRaytracedImage(filename)
+on writeRaytracedImage(filename, imageWidth, samplesPerPixel, maxDepth)
 	-- image
 	set aspectRatio to 16.0 / 9.0
-	set imageWidth to 400
 	set imageHeight to round (imageWidth / aspectRatio) rounding down
 
 	-- world
@@ -337,41 +430,33 @@ on writeRaytracedImage(filename)
 	world's add(newSphere(v3(0,-100.5,-1), 100))
 
 	-- camera
-	set viewportHeight to 2.0
-	set viewportWidth to aspectRatio * viewportHeight
-	set focalLength to 1.0
-
-	set origin to v3(0, 0, 0)
-	set horizontal to v3(viewportWidth, 0, 0)
-	set vertical to v3(0, viewportHeight, 0)
-
-	-- lowerLeftCorner = origin - horizontal/2 - vertical/2 - v3(0, 0, focalLength)
-	set lowerLeftCorner to ¬
-		v3sub( ¬
-			v3sub( ¬
-				v3sub(origin, v3divScalar(horizontal, 2)), ¬
-				v3divScalar(vertical, 2) ¬
-			), ¬
-			v3(0, 0, focalLength) ¬
-		)
+	set cam to newCamera(aspectRatio)
 
 
-	log "building outputList"
+	log "begin raytracing"
+	set raytracingStartTime to current date
+
 	set imgrow to imageHeight - 1 -- j
 	repeat while imgrow >= 0
-		log "rendering scanline " & imgrow
+		set scanlineStartTime to current date
 
 		set imgcol to 0 -- i
 		repeat with imgcol from 0 to imageWidth-1
-
-			set u to imgcol / (imageWidth-1)
-			set v to imgrow / (imageHeight-1)
-			-- r = ray(origin, lower_left_corner + u*horizontal + v*vertical - origin)
-			set r to makeRay(origin, v3sub(v3add(v3add(lowerLeftCorner, v3mulScalar(horizontal,u)), v3mulScalar(vertical,v)), origin))
-			set end of outputListRef to rayColor(r, world)
+			set pixelColor to v3origin()
+			repeat with sample from 0 to samplesPerPixel
+				set u to (imgcol + random number) / (imageWidth-1)
+				set v to (imgrow + random number) / (imageHeight-1)
+				set r to cam's getRay(u, v)
+				v3addMut(pixelColor, rayColor(r, world, maxDepth))
+			end repeat
+			set end of outputListRef to correctColor(v3ToColor(v3divScalar(pixelColor, samplesPerPixel)))
 		end
+		log "rendered scanline " & imgrow & " in " & (current date) - scanlineStartTime & "s"
+
 		set imgrow to imgrow - 1 -- decr loop var
 	end
+
+	log "raytracing took " & (current date) - raytracingStartTime & "s"
 
 	set outfile to open for access filename with write permission
 	writePPMHeader(outfile,imageHeight,imageWidth)
@@ -390,9 +475,14 @@ on writeRaytracedImage(filename)
 	
 end writeRaytracedImage
 
--- writePPMTestImage("test.ppm")
-writeRaytracedImage("image.ppm")
+set everythingStartTime to current date
 
+-- writePPMTestImage("test.ppm")
+-- writeRaytracedImage("image.ppm", 400, 100, 50) -- high quality
+writeRaytracedImage("image.ppm", 400, 10, 20)
+-- writeRaytracedImage("image.ppm", 100, 50, 20)
+
+log "done in " & (current date) - everythingStartTime & "s"
  
 -- don't print result
 ""
