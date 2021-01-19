@@ -94,6 +94,14 @@ on sqrt(x)
 	x ^ 0.5
 end
 
+on abs(x)
+	if x > 0
+		x
+	else
+		-x
+	end
+end
+
 on v3(x as real, y as real, z as real)
 	{x:x,y:y,z:z}
 end
@@ -128,6 +136,15 @@ on v3sub(self, other)
 		z: z of self - z of other ¬
 	}
 end
+
+on v3subScalar(self, scalar) 
+	{ ¬
+		x: x of self - scalar, ¬
+		y: y of self - scalar, ¬
+		z: z of self - scalar ¬
+	}
+end
+
 
 on v3mul(self, other) 
 	{ ¬
@@ -177,6 +194,16 @@ on v3dot(u, v)
 	(x of u) * (x of v) + (y of u) * (y of v) + (z of u) * (z of v)
 end
 
+
+on v3cross(self, other)
+  set res to v3(0,0,0)
+  set x of res to y of self * z of other - z of self * y of other
+  set y of res to z of self * x of other - x of self * z of other
+  set z of res to x of self * y of other - y of self * x of other
+  res
+end
+
+
 on v3origin()
 	v3(0,0,0)
 end
@@ -204,6 +231,28 @@ on v3randomInRange(min, max)
 	return v3(random number * rng + min, random number * rng + min, random number * rng + min)
 end
 
+on min(a, b)
+	if a < b
+		a
+	else
+		b
+	end
+end
+
+on max(a, b)
+	if a > b
+		a
+	else
+		b
+	end
+end
+
+on v3nearZero(self)
+	-- Return true if the vector is close to zero in all dimensions.
+	set s to 1e-8
+	return (abs(x of self) < s) or (abs(y of self) < s) or (abs(z of self) < s)
+end
+
 on randomInUnitSphere()
 	repeat
 		set p to v3randomInRange(-1,1)
@@ -211,6 +260,10 @@ on randomInUnitSphere()
 			return p
 		end
 	end
+end
+
+on randomUnitVector()
+	v3unit(randomInUnitSphere())
 end
 
 on randomInHemisphere(normal)
@@ -246,14 +299,14 @@ end
 
 on correctColor(c)
 	-- sqrt for gamma correction
-  set red of c to clamp(sqrt(red of c), 0.0, 0.999)
-  set green of c to clamp(sqrt(green of c), 0.0, 0.999)
-  set blue of c to clamp(sqrt(blue of c), 0.0, 0.999)
-  c
+	set red of c to clamp(sqrt(red of c), 0.0, 0.999)
+	set green of c to clamp(sqrt(green of c), 0.0, 0.999)
+	set blue of c to clamp(sqrt(blue of c), 0.0, 0.999)
+	c
 end
 
 on makeHitRecord()
-	{t: 0, p: v3origin(), normal: v3origin(), frontFace: true}
+	{t: 0, p: v3origin(), normal: v3origin(), frontFace: true, material: null}
 end
 
 on hitRecordCopyFrom(self, other)
@@ -261,6 +314,8 @@ on hitRecordCopyFrom(self, other)
 	v3copyFrom(p of self, p of other)
 	v3copyFrom(normal of self, normal of other)
 	set frontFace of self to frontFace of other
+	set material of self to material of other
+	self
 end
 
 on hitRecordSetFaceNormal(self, r, outwardNormal)
@@ -274,8 +329,9 @@ on hitRecordSetFaceNormal(self, r, outwardNormal)
 end
 
 script spherePrototype
-	-- property sphereCenter : v3(0,0,0)
-	-- property sphereRadius : 1
+	-- property sphereCenter : v3
+	-- property sphereRadius : number
+	-- property material : material
 
 	on hit(r,tMin,tMax,rec)
 		set oc to v3sub((origin of r), my sphereCenter)
@@ -305,15 +361,17 @@ script spherePrototype
 
 		set outwardNormal to v3divScalar(v3sub(p of rec, my sphereCenter), my sphereRadius)
 		hitRecordSetFaceNormal(rec, r, outwardNormal)
+		set material of rec to my material
 		return true
 	end hit
 end script
 
-on newSphere(_sphereCenter, _sphereRadius)
+on newSphere(_sphereCenter, _sphereRadius, _material)
 	script sphere
 		property parent: spherePrototype
 		property sphereCenter: _sphereCenter
 		property sphereRadius: _sphereRadius
+		property material: _material
 	end
 	return sphere
 end
@@ -354,26 +412,129 @@ on newHittableList(_objects)
 	return hittableList
 end
 
-on newCamera(aspectRatio)
+
+on reflect(v, n)
+	return v3sub(v, v3mulScalar(n, 2*v3dot(v, n)))
+end
+
+on refract(uv, n, etaiOverEtat)
+	set cosTheta to min(v3dot(v3mulScalar(uv, -1), n), 1.0)
+	set rOutPerp to v3mulScalar(v3add(uv, v3mulScalar(n, cosTheta)), etaiOverEtat)
+	set rOutParallel to v3mulScalar(n, -1*sqrt(abs(1.0 - v3lengthSq(rOutPerp))))
+	return v3add(rOutPerp, rOutParallel)
+end
+
+on reflectance(cosine, refIdx)
+	-- Use Schlick's approximation for reflectance.
+	set r0 to (1-refIdx) / (1+refIdx)
+	set r0 to r0*r0
+	return r0 + (1-r0) * ((1 - cosine)^5)
+end
+
+on newLambertian(_albedo)
+	script lambertian
+		property albedo: _albedo
+		on scatter(rIn, rec) 
+			set scatterDirection to v3add(normal of rec, randomUnitVector())
+			-- Catch degenerate scatter direction
+			if v3nearZero(scatterDirection)
+				set scatterDirection to normal of rec
+			end
+			{ ¬
+				scattered: makeRay(p of rec, scatterDirection), ¬
+				attenuation: v3clone(my albedo), ¬
+				success: true ¬
+			}
+		end
+	end
+	return lambertian
+end
+
+on newMetal(_albedo, _fuzz)
+	script metal
+		property albedo: _albedo
+		property fuzz: clamp(_fuzz, 0, 1)
+		on scatter(rIn, rec)
+			set reflected to reflect(v3unit(direction of rIn), normal of rec)
+			local fuzzDirection
+			if my fuzz > 1
+				set fuzzDirection to v3mulScalar(randomInUnitSphere(), my fuzz)
+			else
+				set fuzzDirection to v3origin()
+			end
+			set scattered to makeRay(p of rec, v3add(reflected, fuzzDirection))
+			set success to v3dot(direction of scattered, normal of rec) > 0
+			{ ¬
+				scattered: scattered, ¬
+				attenuation: v3clone(my albedo), ¬
+				success: success ¬
+			}
+		end
+	end
+	return metal
+end
+
+on newDielectric(_indexOfRefraction)
+	script dielectric
+		property indexOfRefraction: _indexOfRefraction
+		on scatter(rIn, rec)
+			if frontFace of rec
+				set refractionRatio to (1.0/(my indexOfRefraction))
+			else
+				set refractionRatio to my indexOfRefraction
+			end
+
+			set unitDirection to v3unit(direction of rIn)
+
+			set cosTheta to min(v3dot(v3mulScalar(unitDirection, -1), normal of rec), 1.0)
+			set sinTheta to sqrt(1.0 - cosTheta*cosTheta)
+
+			set cannotRefract to refractionRatio * sinTheta > 1.0
+
+			local direction
+			if cannotRefract or reflectance(cosTheta, refractionRatio) > random number
+					set direction to reflect(unitDirection, normal of rec)
+			else
+					set direction to refract(unitDirection, normal of rec, refractionRatio)
+			end
+
+			set scattered to makeRay(p of rec, direction)
+
+			{ ¬
+				scattered: scattered, ¬
+				attenuation: v3(1.0, 1.0, 1.0), ¬
+				success: true ¬
+			}
+		end
+	end
+	return dielectric
+end
+
+on newCamera(lookfrom, lookat, vup, aspectRatio)
 	set _viewportHeight to 2.0
 	set _viewportWidth to aspectRatio * _viewportHeight
 	set _focalLength to 1.0
+
+
+  set w to v3unit(v3sub(lookfrom, lookat))
+  set u to v3unit(v3cross(vup, w))
+  set v to v3cross(w, u)
+
+	set _origin to v3clone(lookfrom)
+	set _horizontal to v3mulScalar(u, _viewportWidth)
+	set _vertical to v3mulScalar(v, _viewportHeight)
  
-	set _origin to v3(0, 0, 0)
-	set _horizontal to v3(_viewportWidth, 0, 0)
-	set _vertical to v3(0, _viewportHeight, 0)
- 
-	-- lowerLeftCorner = origin - horizontal/2 - vertical/2 - v3(0, 0, focalLength)
+	-- lowerLeftCorner = origin - horizontal/2 - vertical/2 - w
 	set _lowerLeftCorner to ¬
 		v3sub( ¬
 			v3sub( ¬
 				v3sub(_origin, v3divScalar(_horizontal, 2)), ¬
 				v3divScalar(_vertical, 2) ¬
 			), ¬
-			v3(0, 0, _focalLength) ¬
+			w ¬
 		)
-	script camera
 
+	script camera
 		property viewportHeight : _viewportHeight
 		property viewportWidth : _viewportWidth
 		property focalLength : _focalLength
@@ -385,8 +546,9 @@ on newCamera(aspectRatio)
 		-- lowerLeftCorner = origin - horizontal/2 - vertical/2 - v3(0, 0, focalLength)
 		property lowerLeftCorner:  _lowerLeftCorner
 
-		on getRay(u, v)
-			makeRay(my origin, v3sub(v3add(v3add(my lowerLeftCorner, v3mulScalar(my horizontal, u)), v3mulScalar(my vertical, v)), my origin))
+		on getRay(s, t)
+			-- ray(origin, lower_left_corner + s*horizontal + t*vertical - origin);
+			makeRay(my origin, v3sub(v3add(v3add(my lowerLeftCorner, v3mulScalar(my horizontal, s)), v3mulScalar(my vertical, t)), my origin))
 		end
 	end
 end
@@ -406,10 +568,21 @@ on rayColor(r, world, depth)
 		set rand to randomInHemisphere(normal of rec)
 		set target to v3add(p of rec, rand)
 		set dir to v3sub(target, p of rec)
+		set material to material of rec
+		if material = null
+			log "no material on"
+			log rec
+		end
 
 		-- bounce light
-		-- 0.5 * ray_color(ray(rec.p, target - rec.p), world, depth-1)
-		return v3mulScalar(rayColor(makeRay(p of rec, dir), world, depth-1), 0.5)
+		set scatterResult to material's scatter(r, rec)
+		if (success of scatterResult)
+			return v3mul(attenuation of scatterResult, rayColor(scattered of scatterResult, world, depth-1))
+		end
+		return v3(0,0,0)
+
+		-- simple bounce light
+		-- return v3mulScalar(rayColor(makeRay(p of rec, dir), world, depth-1), 0.5)
 
 		-- color based on normal
 		-- return v3mulScalar(v3add(normal of rec, v3(1,1,1)), 0.5)
@@ -425,13 +598,20 @@ on writeRaytracedImage(filename, imageWidth, samplesPerPixel, maxDepth)
 	set imageHeight to round (imageWidth / aspectRatio) rounding down
 
 	-- world
+	set materialGround to newLambertian(v3(0.5, 0.5, 0.5))
+	set materialBlue to newLambertian(v3(0.1, 0.2, 0.5))
+	-- set materialLeft   to newMetal(v3(0.8, 0.8, 0.8), 1)
+	set materialMetal  to newMetal(v3(0.8, 0.6, 0.2), 1)
+	set materialGlass to newDielectric(1.5)
 	set world to newHittableList({})
-	world's add(newSphere(v3(0,0,-1), 0.5))
-	world's add(newSphere(v3(0,-100.5,-1), 100))
+	world's add(newSphere(v3( 0.0, -100.5, -1.0), 100.0, materialGround)) -- ground
+	world's add(newSphere(v3( 0.0,    0.0, -1.0),   0.5, materialBlue)) -- center
+	world's add(newSphere(v3(-1.0,    0.0, -1.0),   0.5, materialGlass)) -- left
+	world's add(newSphere(v3( 1.0,    0.0, -1.0),   0.5, materialMetal)) -- right
 
 	-- camera
-	set cam to newCamera(aspectRatio)
-
+	-- newCamera(lookfrom, lookat, vup, aspectRatio)
+	set cam to newCamera(v3(-2,2,1), v3(0,0,-1), v3(0,1,0), aspectRatio)
 
 	log "begin raytracing"
 	set raytracingStartTime to current date
@@ -478,9 +658,10 @@ end writeRaytracedImage
 set everythingStartTime to current date
 
 -- writePPMTestImage("test.ppm")
+-- writeRaytracedImage(filename, imageWidth, samplesPerPixel, maxDepth)
 -- writeRaytracedImage("image.ppm", 400, 100, 50) -- high quality
-writeRaytracedImage("image.ppm", 400, 10, 20)
--- writeRaytracedImage("image.ppm", 100, 50, 20)
+writeRaytracedImage("image.ppm", 200, 1, 10)
+-- writeRaytracedImage("image.ppm", 100, 4, 10)
 
 log "done in " & (current date) - everythingStartTime & "s"
  
