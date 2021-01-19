@@ -102,6 +102,72 @@ on abs(x)
 	end
 end
 
+-- trigonmetric functions
+-- https://macosxautomation.com/applescript/sbrt/pgs/sbrt.02.htm
+ 
+
+on sine_of(x)
+	repeat until x >= 0 and x < 360
+		if x >= 360 then
+			set x to x - 360
+		end if
+		if x < 0 then
+			set x to x + 360
+		end if
+	end repeat
+
+	--convert from degrees to radians
+	set x to x * (2 * pi) / 360
+
+	set answer to 0
+	set numerator to x
+	set denominator to 1
+	set factor to -(x ^ 2)
+
+	repeat with i from 3 to 40 by 2
+		set answer to answer + numerator / denominator
+		set numerator to numerator * factor
+		set denominator to denominator * i * (i - 1)
+	end repeat
+
+	return answer
+end sine_of
+
+on cosine_of(x)
+	repeat until x >= 0 and x < 360
+		if x >= 360 then
+			set x to x - 360
+		end if
+		if x < 0 then
+			set x to x + 360
+		end if
+	end repeat
+
+	--convert from degrees to radians
+	set x to x * (2 * pi) / 360
+
+	set answer to 0
+	set numerator to 1
+	set denominator to 1
+	set factor to -(x ^ 2)
+
+	repeat with i from 2 to 40 by 2
+		set answer to answer + numerator / denominator
+		set numerator to numerator * factor
+		set denominator to denominator * i * (i - 1)
+	end repeat
+
+	return answer
+end cosine_of
+
+--x is in degrees
+on tan(x)
+	set answer to sine_of(x) / (cosine_of(x))
+	return answer
+end tan
+
+-- vector
+
 on v3(x as real, y as real, z as real)
 	{x:x,y:y,z:z}
 end
@@ -196,11 +262,11 @@ end
 
 
 on v3cross(self, other)
-  set res to v3(0,0,0)
-  set x of res to y of self * z of other - z of self * y of other
-  set y of res to z of self * x of other - x of self * z of other
-  set z of res to x of self * y of other - y of self * x of other
-  res
+	set res to v3(0,0,0)
+	set x of res to y of self * z of other - z of self * y of other
+	set y of res to z of self * x of other - x of self * z of other
+	set z of res to x of self * y of other - y of self * x of other
+	res
 end
 
 
@@ -229,6 +295,12 @@ end
 on v3randomInRange(min, max)
 	set rng to max - min
 	return v3(random number * rng + min, random number * rng + min, random number * rng + min)
+end
+
+
+on randomInRange(min, max)
+	set rng to max - min
+	return random number * rng + min
 end
 
 on min(a, b)
@@ -510,15 +582,17 @@ on newDielectric(_indexOfRefraction)
 	return dielectric
 end
 
-on newCamera(lookfrom, lookat, vup, aspectRatio)
-	set _viewportHeight to 2.0
+on newCamera(lookfrom, lookat, vup, vfov, aspectRatio)
+	-- set theta to degrees_to_radians(vfov)
+	set h to tan(vfov/2) -- this tan() function expects degrees
+	set _viewportHeight to 2.0  * h
 	set _viewportWidth to aspectRatio * _viewportHeight
 	set _focalLength to 1.0
 
 
-  set w to v3unit(v3sub(lookfrom, lookat))
-  set u to v3unit(v3cross(vup, w))
-  set v to v3cross(w, u)
+	set w to v3unit(v3sub(lookfrom, lookat))
+	set u to v3unit(v3cross(vup, w))
+	set v to v3cross(w, u)
 
 	set _origin to v3clone(lookfrom)
 	set _horizontal to v3mulScalar(u, _viewportWidth)
@@ -547,7 +621,7 @@ on newCamera(lookfrom, lookat, vup, aspectRatio)
 		property lowerLeftCorner:  _lowerLeftCorner
 
 		on getRay(s, t)
-			-- ray(origin, lower_left_corner + s*horizontal + t*vertical - origin);
+			-- ray(origin, lower_left_corner + s*horizontal + t*vertical - origin)
 			makeRay(my origin, v3sub(v3add(v3add(my lowerLeftCorner, v3mulScalar(my horizontal, s)), v3mulScalar(my vertical, t)), my origin))
 		end
 	end
@@ -592,12 +666,7 @@ on rayColor(r, world, depth)
 	return v3add(v3mulScalar(v3(1.0, 1.0, 1.0),(1.0-t)), v3mulScalar(v3(0.5, 0.7, 1.0),t))
 end
 
-on writeRaytracedImage(filename, imageWidth, samplesPerPixel, maxDepth)
-	-- image
-	set aspectRatio to 16.0 / 9.0
-	set imageHeight to round (imageWidth / aspectRatio) rounding down
-
-	-- world
+on simpleScene()
 	set materialGround to newLambertian(v3(0.5, 0.5, 0.5))
 	set materialBlue to newLambertian(v3(0.1, 0.2, 0.5))
 	-- set materialLeft   to newMetal(v3(0.8, 0.8, 0.8), 1)
@@ -608,12 +677,75 @@ on writeRaytracedImage(filename, imageWidth, samplesPerPixel, maxDepth)
 	world's add(newSphere(v3( 0.0,    0.0, -1.0),   0.5, materialBlue)) -- center
 	world's add(newSphere(v3(-1.0,    0.0, -1.0),   0.5, materialGlass)) -- left
 	world's add(newSphere(v3( 1.0,    0.0, -1.0),   0.5, materialMetal)) -- right
+	return world
+end
+ 
+on randomScene()
+	set world to newHittableList({})
+
+	set groundMaterial to newLambertian(v3(0.5, 0.5, 0.5))
+	world's add(newSphere(v3(0,-1000,0), 1000, groundMaterial))
+
+	set minPos to -10
+	set maxPos to 10
+	set numItems to 5
+	set stepSize to round ((maxPos - minPos) / sqrt(numItems)) rounding up
+
+	repeat with a from minPos to maxPos by stepSize
+		repeat with b from minPos to maxPos by stepSize
+			set chooseMat to (random number)
+			set sphereCenter to v3(a + 0.9*(random number), 0.2, b + 0.9*(random number))
+
+			if (v3length(v3sub(sphereCenter, v3(4, 0.2, 0))) > 0.9)
+				if (chooseMat < 0.8)
+					-- diffuse
+					set albedo to v3mul(v3randomInRange(0,1), v3randomInRange(0,1))
+					set sphereMaterial to newLambertian(albedo)
+					world's add(newSphere(sphereCenter, 0.2, sphereMaterial))
+				else if (chooseMat < 0.95)
+					-- metal
+					set albedo to v3randomInRange(0.5, 1)
+					set fuzz to randomInRange(0, 0.5)
+					set sphereMaterial to newMetal(albedo, fuzz)
+					world's add(newSphere(sphereCenter, 0.2, sphereMaterial))
+				else
+					-- glass
+					set sphereMaterial to newDielectric(1.5)
+					world's add(newSphere(sphereCenter, 0.2, sphereMaterial))
+				end
+			end
+		end
+	end
+
+	set material1 to newDielectric(1.5)
+	world's add(newSphere(v3(0, 1, 0), 1.0, material1))
+
+	set material2 to newLambertian(v3(0.4, 0.2, 0.1))
+	world's add(newSphere(v3(-4, 1, 0), 1.0, material2))
+
+	set material3 to newMetal(v3(0.7, 0.6, 0.5), 0.0)
+	world's add(newSphere(v3(4, 1, 0), 1.0, material3))
+
+	return world
+end
+
+
+on writeRaytracedImage(filename, imageWidth, samplesPerPixel, maxDepth)
+	-- image
+	set aspectRatio to 16.0 / 9.0
+	set imageHeight to round (imageWidth / aspectRatio) rounding down
+
+	-- world
+	-- set world to simpleScene()
+	set world to randomScene()
+
 
 	-- camera
-	-- newCamera(lookfrom, lookat, vup, aspectRatio)
-	set cam to newCamera(v3(-2,2,1), v3(0,0,-1), v3(0,1,0), aspectRatio)
+	-- newCamera(lookfrom, lookat, vup, vfov, aspectRatio)
+	-- set cam to newCamera(v3(-2,2,1), v3(0,0,-1), v3(0,1,0), 20, aspectRatio)
+	set cam to newCamera(v3(13,2,3), v3(0,0,0), v3(0,1,0), 20, aspectRatio)
 
-	log "begin raytracing"
+	log "begin raytracing with " & (count (world's objects)) & " objects"
 	set raytracingStartTime to current date
 
 	set imgrow to imageHeight - 1 -- j
@@ -658,10 +790,17 @@ end writeRaytracedImage
 set everythingStartTime to current date
 
 -- writePPMTestImage("test.ppm")
+
+set outputFile to "output_"&(time of (current date))&".ppm"
+log "rendering to "&outputFile
+do shell script "touch " & outputFile
+
+
 -- writeRaytracedImage(filename, imageWidth, samplesPerPixel, maxDepth)
--- writeRaytracedImage("image.ppm", 400, 100, 50) -- high quality
-writeRaytracedImage("image.ppm", 200, 1, 10)
--- writeRaytracedImage("image.ppm", 100, 4, 10)
+-- writeRaytracedImage(outputFile, 400, 100, 50) -- high quality
+writeRaytracedImage(outputFile, 400, 4, 10) -- low quality
+-- writeRaytracedImage(outputFile, 400, 50, 10)
+-- writeRaytracedImage(outputFile, 200, 100, 10)
 
 log "done in " & (current date) - everythingStartTime & "s"
  
