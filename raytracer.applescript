@@ -1,5 +1,12 @@
 #!/usr/bin/osascript
 
+property randomSeed: 20
+property numSMPWorkers: 16
+-- property renderConfig: {imageWidth: 400, samplesPerPixel: 100, maxDepth: 50} -- high quality
+property renderConfig: {imageWidth: 200, samplesPerPixel: 4, maxDepth: 5} -- med quality
+-- property renderConfig: {imageWidth: 100, samplesPerPixel: 1, maxDepth: 3} -- low quality
+
+
 on makeColor(r, g, b)
 	{red: r, green: g, blue: b}
 end
@@ -8,21 +15,22 @@ on printRGB(r, g, b)
 	set colr to (round (256 * r) rounding down)
 	set colg to (round (256 * g) rounding down)
 	set colb to (round (256 * b) rounding down)
-	log ("" & colr & " " & colg & " " & colb & "\n")
+	log ("" & colr & " " & colg & " " & colb)
 end
 
 on printColor(color)
 	set colr to (round (256 * (red in color)) rounding down)
 	set colg to (round (256 * (green in color)) rounding down)
 	set colb to (round (256 * (blue in color)) rounding down)
-	log ("" & colr & " " & colg & " " & colb & "\n")
+	log ("" & colr & " " & colg & " " & colb)
 end
 
 on writeColor(outfile, color)
 	set colr to (round (256 * (red in color)) rounding down)
 	set colg to (round (256 * (green in color)) rounding down)
 	set colb to (round (256 * (blue in color)) rounding down)
-	write ("" & colr & " " & colg & " " & colb & "\n") to outfile
+	write ("" & colr & " " & colg & " " & colb & "
+") to outfile
 end
 on writeColorInl(outfile, color)
 	-- slower than writeColor
@@ -31,13 +39,15 @@ on writeColorInl(outfile, color)
 	write (round (256 * (green in color)) rounding down) to outfile
 	write " " to outfile
 	write (round (256 * (blue in color)) rounding down) to outfile
-	write "\n" to outfile
+	write "
+" to outfile
 end
 on writeRGB(outfile, r,g,b)
 	set colr to (round (256 * (r)) rounding down)
 	set colg to (round (256 * (g)) rounding down)
 	set colb to (round (256 * (b)) rounding down)
-	write ("" & colr & " " & colg & " " & colb & "\n") to outfile
+	write ("" & colr & " " & colg & " " & colb & "
+") to outfile
 end
 
 on writePPMHeader(outfile,imageHeight,imageWidth)
@@ -47,15 +57,22 @@ on writePPMHeader(outfile,imageHeight,imageWidth)
 " to outfile
 end
 
-global outputList 
-global outputListRef 
+on newImageData()
+	script imagedata
+		property pixels: {}
 
-set outputList to {}  
-set outputListRef to a reference to outputList
+		on append(pixel)
+			set end of my pixels to pixel
+		end
+	end
+	return imagedata
+end
 
 on writePPMTestImage(filename)
 	set imageHeight to 256
 	set imageWidth to 256
+
+	set imagedata to newImageData()
 
 	log "building outputList"
 	set imgrow to imageHeight - 1
@@ -68,7 +85,7 @@ on writePPMTestImage(filename)
 			set g to imgrow / (imageHeight-1)
 			set b to 0.25
 	
-			set end of outputListRef to makeColor(r, g, b) 
+			imagedata's append(makeColor(r, g, b))
 		end
 		set imgrow to imgrow - 1 -- decr loop var
 	end
@@ -78,13 +95,13 @@ on writePPMTestImage(filename)
 	writePPMHeader(outfile,imageHeight,imageWidth)
  
 
-	set outputItems to count outputListRef
+	set outputItems to count imagedata's pixels
 	repeat with outputIndex from 1 to outputItems
 		if outputIndex mod 1000 = 0
 			-- show progress
 			log "wrote " & (round (outputIndex/outputItems)*100) & "%"
 		end
-		writeColor(outfile, (item outputIndex of outputListRef))
+		writeColor(outfile, (item outputIndex of imagedata's pixels))
 	end
 	log "done writing output"
 	
@@ -168,7 +185,7 @@ end tan
 
 -- vector
 
-on v3(x as real, y as real, z as real)
+on v3(x, y, z)
 	{x:x,y:y,z:z}
 end
 
@@ -686,8 +703,8 @@ on randomScene()
 	set groundMaterial to newLambertian(v3(0.5, 0.5, 0.5))
 	world's add(newSphere(v3(0,-1000,0), 1000, groundMaterial))
 
-	set minPos to -10
-	set maxPos to 10
+	set minPos to -3
+	set maxPos to 3
 	set numItems to 5
 	set stepSize to round ((maxPos - minPos) / sqrt(numItems)) rounding up
 
@@ -730,7 +747,7 @@ on randomScene()
 end
 
 
-on writeRaytracedImage(filename, imageWidth, samplesPerPixel, maxDepth)
+on writeRaytracedImage(filename, numWorkers, worker, imageWidth, samplesPerPixel, maxDepth)
 	-- image
 	set aspectRatio to 16.0 / 9.0
 	set imageHeight to round (imageWidth / aspectRatio) rounding down
@@ -739,6 +756,7 @@ on writeRaytracedImage(filename, imageWidth, samplesPerPixel, maxDepth)
 	-- set world to simpleScene()
 	set world to randomScene()
 
+	set imagedata to newImageData()
 
 	-- camera
 	-- newCamera(lookfrom, lookat, vup, vfov, aspectRatio)
@@ -748,8 +766,14 @@ on writeRaytracedImage(filename, imageWidth, samplesPerPixel, maxDepth)
 	log "begin raytracing with " & (count (world's objects)) & " objects"
 	set raytracingStartTime to current date
 
-	set imgrow to imageHeight - 1 -- j
-	repeat while imgrow >= 0
+	set chunkSize to round (imageHeight / numWorkers) rounding up
+	set chunkStart to chunkSize * worker
+	set nextChunkStart to min((chunkSize * (worker + 1)), imageHeight)
+	set actualChunkSize to nextChunkStart - chunkStart
+
+	set imgrow to nextChunkStart - 1 -- j
+	set rowCount to 0
+	repeat until imgrow < chunkStart
 		set scanlineStartTime to current date
 
 		set imgcol to 0 -- i
@@ -761,48 +785,108 @@ on writeRaytracedImage(filename, imageWidth, samplesPerPixel, maxDepth)
 				set r to cam's getRay(u, v)
 				v3addMut(pixelColor, rayColor(r, world, maxDepth))
 			end repeat
-			set end of outputListRef to correctColor(v3ToColor(v3divScalar(pixelColor, samplesPerPixel)))
+			imagedata's append(correctColor(v3ToColor(v3divScalar(pixelColor, samplesPerPixel))))
 		end
-		log "rendered scanline " & imgrow & " in " & (current date) - scanlineStartTime & "s"
+		log "rendered scanline " & imgrow & " in " & (current date) - scanlineStartTime & "s ("& (round ((rowCount/actualChunkSize)*100))&"%)"
 
+		set rowCount to rowCount + 1
 		set imgrow to imgrow - 1 -- decr loop var
 	end
 
 	log "raytracing took " & (current date) - raytracingStartTime & "s"
 
 	set outfile to open for access filename with write permission
-	writePPMHeader(outfile,imageHeight,imageWidth)
+	writePPMHeader(outfile,actualChunkSize,imageWidth)
 
 	log "writing output"
 
-	set outputItems to count outputListRef
+	set outputItems to count imagedata's pixels
 	repeat with outputIndex from 1 to outputItems
 		if outputIndex mod 1000 = 0
 			-- show progress
 			log "wrote " & (round (outputIndex/outputItems)*100) & "%"
 		end
-		writeColor(outfile, (item outputIndex of outputListRef))
+		writeColor(outfile, (item outputIndex of imagedata's pixels))
 	end
 	log "done writing output"
 	
 end writeRaytracedImage
 
-set everythingStartTime to current date
+on getWorkerPartFilename(base, worker)
+	base&"part_"&worker&".ppm"
+end
 
--- writePPMTestImage("test.ppm")
+on run argv
+	local worker
+	local numWorkers
+	local outputFile
 
-set outputFile to "output_"&(time of (current date))&".ppm"
-log "rendering to "&outputFile
-do shell script "touch " & outputFile
+	set imageWidth to my renderConfig's imageWidth
+	set samplesPerPixel to my renderConfig's samplesPerPixel
+	set maxDepth to my renderConfig's maxDepth
 
+	if argv is {}
+		-- no workers
+		set numWorkers to 1
+		set worker to 0
+		set outputFile to "output_"&(time of (current date))&".ppm"
+	else 
+		set numWorkers to my numSMPWorkers
 
--- writeRaytracedImage(filename, imageWidth, samplesPerPixel, maxDepth)
--- writeRaytracedImage(outputFile, 400, 100, 50) -- high quality
-writeRaytracedImage(outputFile, 400, 4, 10) -- low quality
--- writeRaytracedImage(outputFile, 400, 50, 10)
--- writeRaytracedImage(outputFile, 200, 100, 10)
+		if (item 1 of argv) as text is "smp"
+			-- we're in the parent. fork workers then collect results
 
-log "done in " & (current date) - everythingStartTime & "s"
- 
--- don't print result
-""
+			set outputFileBase to "output_"&(time of (current date))
+			set outputFile to outputFileBase&".ppm"
+
+			-- run processes in parallel
+			set commands to ""
+			log "starting workers: "&numWorkers
+			repeat with worker from 0 to numWorkers-1
+				set commands to commands&"./raytracer.applescript "& worker & " " & outputFileBase & " " &" 2>&1 & "
+			end
+
+			log "running"
+			log  commands&"wait"
+			do shell script commands&"wait"
+
+			-- combine parts into output file
+			do shell script "touch " & outputFile
+			set outfile to open for access outputFile with write permission
+			set aspectRatio to 16.0 / 9.0
+			set imageHeight to round (imageWidth / aspectRatio) rounding down
+			writePPMHeader(outfile,imageHeight,imageWidth)
+			close access outfile
+
+			repeat with worker from 0 to numWorkers-1
+				set workerReverse to (numWorkers-1) - worker
+				set workerPartFile to getWorkerPartFilename(outputFileBase, workerReverse)
+				do shell script "tail -n +4 "&workerPartFile&" >> "&outputFile&" && rm "&workerPartFile
+			end
+
+			return
+		else
+			-- we're in a worker
+			set outputFileBase to (item 2 of argv) as text
+			set worker to (item 1 of argv) as number
+			set outputFile to getWorkerPartFilename(outputFileBase, worker)
+		end
+	end
+
+	
+	set everythingStartTime to current date
+
+	log "rendering to "&outputFile
+	do shell script "touch " & outputFile
+
+	-- seed rng. necessary to make sure the workers generate the same world
+	random number with seed my randomSeed
+
+	writeRaytracedImage(outputFile, numWorkers, worker, imageWidth, samplesPerPixel, maxDepth)
+	-- writePPMTestImage("test.ppm")
+
+	log "done in " & (current date) - everythingStartTime & "s"
+	 
+	-- don't print result
+	""
+end run
