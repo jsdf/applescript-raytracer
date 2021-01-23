@@ -2,9 +2,11 @@
 
 property randomSeed: 20
 property numSMPWorkers: 16
--- property renderConfig: {imageWidth: 400, samplesPerPixel: 100, maxDepth: 50} -- high quality
-property renderConfig: {imageWidth: 200, samplesPerPixel: 4, maxDepth: 5} -- med quality
--- property renderConfig: {imageWidth: 100, samplesPerPixel: 1, maxDepth: 3} -- low quality
+
+-- property renderConfig: {imageWidth: 400, samplesPerPixel: 100, maxBounces: 50} -- high quality
+property renderConfig: {imageWidth: 600, samplesPerPixel: 40, maxBounces: 20} -- med/high quality
+-- property renderConfig: {imageWidth: 200, samplesPerPixel: 4, maxBounces: 5} -- med quality
+-- property renderConfig: {imageWidth: 100, samplesPerPixel: 1, maxBounces: 3} -- low quality
 
 
 on makeColor(r, g, b)
@@ -747,7 +749,7 @@ on randomScene()
 end
 
 
-on writeRaytracedImage(filename, numWorkers, worker, imageWidth, samplesPerPixel, maxDepth)
+on writeRaytracedImage(filename, numWorkers, worker, imageWidth, samplesPerPixel, maxBounces)
 	-- image
 	set aspectRatio to 16.0 / 9.0
 	set imageHeight to round (imageWidth / aspectRatio) rounding down
@@ -783,7 +785,7 @@ on writeRaytracedImage(filename, numWorkers, worker, imageWidth, samplesPerPixel
 				set u to (imgcol + random number) / (imageWidth-1)
 				set v to (imgrow + random number) / (imageHeight-1)
 				set r to cam's getRay(u, v)
-				v3addMut(pixelColor, rayColor(r, world, maxDepth))
+				v3addMut(pixelColor, rayColor(r, world, maxBounces))
 			end repeat
 			imagedata's append(correctColor(v3ToColor(v3divScalar(pixelColor, samplesPerPixel))))
 		end
@@ -823,7 +825,7 @@ on run argv
 
 	set imageWidth to my renderConfig's imageWidth
 	set samplesPerPixel to my renderConfig's samplesPerPixel
-	set maxDepth to my renderConfig's maxDepth
+	set maxBounces to my renderConfig's maxBounces
 
 	if argv is {}
 		-- no workers
@@ -843,7 +845,7 @@ on run argv
 			set commands to ""
 			log "starting workers: "&numWorkers
 			repeat with worker from 0 to numWorkers-1
-				set commands to commands&"./raytracer.applescript "& worker & " " & outputFileBase & " " &" 2>&1 & "
+				set commands to commands&"./raytracer.applescript "& worker & " " & outputFileBase & " " &" & "
 			end
 
 			log "running"
@@ -882,7 +884,7 @@ on run argv
 	-- seed rng. necessary to make sure the workers generate the same world
 	random number with seed my randomSeed
 
-	writeRaytracedImage(outputFile, numWorkers, worker, imageWidth, samplesPerPixel, maxDepth)
+	writeRaytracedImage(outputFile, numWorkers, worker, imageWidth, samplesPerPixel, maxBounces)
 	-- writePPMTestImage("test.ppm")
 
 	log "done in " & (current date) - everythingStartTime & "s"
