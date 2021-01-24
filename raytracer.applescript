@@ -59,6 +59,11 @@ on writePPMHeader(outfile,imageHeight,imageWidth)
 " to outfile
 end
 
+-- the purpose of this object is to wrap a list holding pixel data of an image
+-- in an object, because when lists assigned directly to local variables are
+-- appended to, applescript makes an O(n) copy of the list. when they are 
+-- properties on an object however, an O(1) mutable append is used instead.
+-- this avoids pixel-by-pixel generation of images taking O(n^2) time
 on newImageData()
 	script imagedata
 		property pixels: {}
@@ -122,8 +127,8 @@ on abs(x)
 end
 
 -- trigonmetric functions
--- https://macosxautomation.com/applescript/sbrt/pgs/sbrt.02.htm
- 
+-- from https://macosxautomation.com/applescript/sbrt/pgs/sbrt.02.htm
+-- this is dumb, but only used once at startup to calculate the camera fov
 
 on sine_of(x)
 	repeat until x >= 0 and x < 360
@@ -338,6 +343,8 @@ on max(a, b)
 	end
 end
 
+-- raytracing
+
 on v3nearZero(self)
 	-- Return true if the vector is close to zero in all dimensions.
 	set s to 1e-8
@@ -474,7 +481,7 @@ script hittableListPrototype
 		set my objects to {}
 	end
 
-	on add(object) 
+	on add(object)
 		set end of my objects to object
 	end
 
