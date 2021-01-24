@@ -25,4 +25,6 @@ to spawn multiple worker processes, to take advantage of multiple cpu cores, run
 
 you can edit `renderConfig` property [defined at the top of raytracer.applescript](raytracer.applescript#L7) to adjust the resolution, rays per pixel, and max bounces per ray, which will substantially affect the time taken to render.
 
+you can also change the `randomSeed` property to generate a different random layout of the smaller spheres
+
 

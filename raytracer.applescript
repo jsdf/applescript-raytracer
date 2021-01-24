@@ -4,9 +4,9 @@ property randomSeed: 20
 property numSMPWorkers: 16
 
 -- property renderConfig: {imageWidth: 400, samplesPerPixel: 100, maxBounces: 50} -- high quality
-property renderConfig: {imageWidth: 600, samplesPerPixel: 40, maxBounces: 20} -- med/high quality
--- property renderConfig: {imageWidth: 200, samplesPerPixel: 4, maxBounces: 5} -- med quality
--- property renderConfig: {imageWidth: 100, samplesPerPixel: 1, maxBounces: 3} -- low quality
+-- property renderConfig: {imageWidth: 400, samplesPerPixel: 40, maxBounces: 50} -- med/high quality
+property renderConfig: {imageWidth: 400, samplesPerPixel: 4, maxBounces: 50} -- med quality
+-- property renderConfig: {imageWidth: 100, samplesPerPixel: 1, maxBounces: 50} -- low quality
 
 
 on makeColor(r, g, b)
