@@ -14,7 +14,9 @@ to run it yourself:
 ./raytracer.applescript
 ```
 
-or to spawn multiple worker processes, to take advantage of multiple cpu cores, run the script with the `smp` argument. no logging of incremental progress will be shown in this mode
+this will output a [ppm image file](https://en.wikipedia.org/wiki/Netpbm#PPM_example) named output_[timestamp].ppm
+
+to spawn multiple worker processes, to take advantage of multiple cpu cores, run the script with the `smp` argument. no logging of incremental progress will be shown in this mode
 
 
 ```sh
