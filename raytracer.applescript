@@ -825,6 +825,7 @@ on getWorkerPartFilename(base, worker)
 	base&"part_"&worker&".ppm"
 end
 
+-- called automatically when this script is run
 on run argv
 	local worker
 	local numWorkers
@@ -835,7 +836,7 @@ on run argv
 	set maxBounces to my renderConfig's maxBounces
 
 	if argv is {}
-		-- no workers
+		-- we're in normal (no parallel workers) mode
 		set numWorkers to 1
 		set worker to 0
 		set outputFile to "output_"&(time of (current date))&".ppm"
@@ -843,7 +844,7 @@ on run argv
 		set numWorkers to my numSMPWorkers
 
 		if (item 1 of argv) as text is "smp"
-			-- we're in the parent. fork workers then collect results
+			-- we're in the parent. spawn workers then collect results when they finish
 
 			set outputFileBase to "output_"&(time of (current date))
 			set outputFile to outputFileBase&".ppm"
@@ -861,6 +862,7 @@ on run argv
 
 			-- combine parts into output file
 			do shell script "touch " & outputFile
+			-- write full size image ppm header
 			set outfile to open for access outputFile with write permission
 			set aspectRatio to 16.0 / 9.0
 			set imageHeight to round (imageWidth / aspectRatio) rounding down
@@ -868,11 +870,14 @@ on run argv
 			close access outfile
 
 			repeat with worker from 0 to numWorkers-1
+				-- iterate backwards because the parts need to be assembled in reverse order
 				set workerReverse to (numWorkers-1) - worker
 				set workerPartFile to getWorkerPartFilename(outputFileBase, workerReverse)
+				-- strip off individual image part headers and append to output file
 				do shell script "tail -n +4 "&workerPartFile&" >> "&outputFile&" && rm "&workerPartFile
 			end
 
+			-- quit at this point, so we don't fall through to the raytracing code
 			return
 		else
 			-- we're in a worker
@@ -891,8 +896,8 @@ on run argv
 	-- seed rng. necessary to make sure the workers generate the same world
 	random number with seed my randomSeed
 
+	-- actually do the raytracing and write the image (or image part)
 	writeRaytracedImage(outputFile, numWorkers, worker, imageWidth, samplesPerPixel, maxBounces)
-	-- writePPMTestImage("test.ppm")
 
 	log "done in " & (current date) - everythingStartTime & "s"
 	 
