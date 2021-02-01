@@ -27,4 +27,4 @@ you can edit `renderConfig` property [defined at the top of raytracer.applescrip
 
 you can also change the `randomSeed` property to generate a different random layout of the smaller spheres
 
-
+with a few small changes the code also [runs on classic mac os](https://twitter.com/ur_friend_james/status/1353168983122464769)
